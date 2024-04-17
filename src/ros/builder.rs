@@ -19,7 +19,11 @@ impl Backend for Ros {
             tlds.into_iter()
                 .fold((vec![], vec![]), |mut acc, tld| match generate(tld) {
                     Ok(s) => {
-                        acc.0.push(format!("#<typedef>\n{}\n#</typedef>", &s));
+                        s.len().gt(&0).then(|| 
+                            acc.0.push(format!("#<typedef>\n\
+                                                {s}\n\
+                                                #</typedef>"))
+                        );
                         acc
                     }
                     Err(e) => {
