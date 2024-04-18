@@ -8,9 +8,8 @@ use rasn_compiler::intermediate::{
     ASN1Type, ASN1Value, CharacterStringType, IntegerType,
     ToplevelDefinition, ToplevelTypeDefinition,
 };
-
-use rasn_compiler::prelude::ir::*;
-use rasn_compiler::prelude::*;
+use rasn_compiler::prelude::{*, ir::*};
+use crate::common::{IntegerTypeExt, to_ros_const_case, to_ros_snake_case, to_ros_title_case};
 
 macro_rules! error {
     ($kind:ident, $($arg:tt)*) => {
@@ -25,61 +24,6 @@ macro_rules! error {
 pub(crate) use error;
 
 use super::*;
-
-pub trait IntegerTypeExt {
-    fn to_str(self) -> &'static str;
-}
-
-impl IntegerTypeExt for IntegerType {
-    fn to_str(self) -> &'static str {
-        match self {
-            IntegerType::Int8 => "int8",
-            IntegerType::Uint8 => "uint8",
-            IntegerType::Int16 => "int16",
-            IntegerType::Uint16 => "uint16",
-            IntegerType::Int32 => "int32",
-            IntegerType::Uint32 => "uint32",
-            IntegerType::Int64 => "int64",
-            IntegerType::Uint64 => "uint64",
-            IntegerType::Unbounded => "int64",
-        }
-    }
-}
-
-pub fn to_ros_snake_case(input: &str) -> String {
-    let input = input.replace('-', "_");
-    let mut lowercase = String::with_capacity(input.len());
-
-    let peekable = &mut input.chars().peekable();
-    while let Some(c) = peekable.next() {
-        if c.is_lowercase() || c.is_numeric() {
-            lowercase.push(c);
-            if c != '_' && peekable.peek().map_or(false, |next| next.is_uppercase()) {
-                lowercase.push('_');
-            }
-        } else {
-            lowercase.push(c.to_ascii_lowercase());
-        }
-    }
-    lowercase
-}
-
-pub fn to_ros_const_case(input: &str) -> String {
-    to_ros_snake_case(input).to_string().to_uppercase()
-}
-
-pub fn to_ros_title_case(input: &str) -> String {
-    input.replace('-', "")
-}
-
-pub fn format_comments(comments: &str) -> Result<String, GeneratorError> {
-    if comments.is_empty() {
-        Ok("".into())
-    } else {
-        let joined = String::from("# ") + &comments.replace('\n', "\n#") + "\n";
-        Ok(joined)
-    }
-}
 
 pub fn inner_name(name: &String, parent_name: &String) -> String {
     format!("{}{}", parent_name, name)
@@ -111,6 +55,15 @@ pub fn int_type_token(opt_min: Option<i128>, opt_max: Option<i128>, is_extensibl
         )
     } else {
         format!("int64")
+    }
+}
+
+pub fn format_comments(comments: &str) -> Result<String, GeneratorError> {
+    if comments.is_empty() {
+        Ok("".into())
+    } else {
+        let joined = String::from("# ") + &comments.replace('\n', "\n#") + "\n";
+        Ok(joined)
     }
 }
 
@@ -295,7 +248,7 @@ fn format_sequence_member(
     if (member.is_optional && member.default_value.is_none())
         || member.name.starts_with("ext_group_")
     {
-        formatted_type_name = format!("bool {name}_present\n\
+        formatted_type_name = format!("bool {name}_is_present\n\
                                       {formatted_type_name}")
     }
     Ok(format!("{formatted_type_name} {name}\n"))

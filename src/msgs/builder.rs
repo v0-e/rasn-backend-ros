@@ -3,13 +3,13 @@ use std::{collections::BTreeMap, error::Error};
 use rasn_compiler::prelude::ir::*;
 use rasn_compiler::prelude::*;
 
-use crate::ros::utils::IntegerTypeExt;
-use crate::ros::{generate, Ros};
-use crate::ros::{template::*, utils::*};
+use crate::msgs::{generate, Msgs};
+use crate::msgs::{template::*, utils::*};
+use crate::common::*;
 
 pub(crate) const INNER_ARRAY_LIKE_PREFIX: &str = "Anonymous_";
 
-impl Backend for Ros {
+impl Backend for Msgs {
     fn generate_module(
         &self,
         tlds: Vec<ToplevelDefinition>,
@@ -20,9 +20,9 @@ impl Backend for Ros {
                 .fold((vec![], vec![]), |mut acc, tld| match generate(tld) {
                     Ok(s) => {
                         s.len().gt(&0).then(|| 
-                            acc.0.push(format!("#<typedef>\n\
+                            acc.0.push(format!("<typedef>\n\
                                                 {s}\n\
-                                                #</typedef>"))
+                                                </typedef>"))
                         );
                         acc
                     }

@@ -58,7 +58,7 @@ pub fn bit_string_template(comments: &str, name: &str, constraints: &str, dvalue
     format!(
         "## BIT-STRING {name}\n\
         {comments}\n\
-        uint8[] array\n\
+        uint8[] value\n\
         uint8 bits_unused\n\
         {constraints}\n\n\
         {typed_dvalues}"

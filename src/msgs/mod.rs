@@ -5,7 +5,7 @@ mod builder;
 mod template;
 mod utils;
 
-pub struct Ros;
+pub struct Msgs;
 
 use builder::*;
 
