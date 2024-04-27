@@ -217,15 +217,13 @@ pub fn value_to_tokens(
             "All values are currently unsupported!"
         )),
         ASN1Value::Null => todo!(),
-        ASN1Value::Choice(i, v) => {
+        ASN1Value::Choice { inner_value, .. } => {
             if let Some(_ty_n) = type_name {
-                let _option = i;
-                let _inner = value_to_tokens(v, None)?;
                 todo!()
             } else {
                 Err(error!(
                     Unidentified,
-                    "A type name is needed to stringify choice value {:?}", value
+                    "A type name is needed to stringify choice value {:?}", inner_value
                 ))
             }
         }
@@ -241,7 +239,7 @@ pub fn value_to_tokens(
             if let Some(_ty_n) = type_name {
                 let _tokenized_fields = fields
                     .iter()
-                    .map(|(_, val)| value_to_tokens(val.value(), None))
+                    .map(|(_, _, val)| value_to_tokens(val.value(), None))
                     .collect::<Result<Vec<String>, _>>()?;
                 todo!()
             } else {
@@ -429,7 +427,7 @@ impl ASN1ValueExt for ASN1Value {
     fn is_const_type(&self) -> bool {
         match self {
             ASN1Value::Null | ASN1Value::Boolean(_) | ASN1Value::EnumeratedValue { .. } => true,
-            ASN1Value::Choice(_, v) => v.is_const_type(),
+            ASN1Value::Choice { inner_value, .. } => inner_value.is_const_type(),
             ASN1Value::LinkedIntValue { integer_type, .. } => {
                 integer_type != &IntegerType::Unbounded
             }

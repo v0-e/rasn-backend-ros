@@ -274,22 +274,22 @@ pub fn generate_value(tld: ToplevelValueDefinition) -> Result<String, GeneratorE
         ASN1Value::LinkedIntValue { .. } => generate_integer_value(tld),
         ASN1Value::BitString(_) if ty == BIT_STRING => todo!(),
         ASN1Value::OctetString(_) if ty == OCTET_STRING => todo!(),
-        ASN1Value::Choice(choice, inner) => {
-            if inner.is_const_type() {
+        ASN1Value::Choice {variant_name, inner_value, ..} => {
+            if inner_value.is_const_type() {
                 call_template!(
                     const_choice_value_template,
                     tld,
                     &tld.associated_type,
-                    choice,
-                    &value_to_tokens(inner, None)?
+                    variant_name,
+                    &value_to_tokens(inner_value, None)?
                 )
             } else {
                 call_template!(
                     choice_value_template,
                     tld,
                     &tld.associated_type,
-                    &choice,
-                    &value_to_tokens(inner, None)?
+                    &variant_name,
+                    &value_to_tokens(inner_value, None)?
                 )
             }
         }
@@ -302,7 +302,7 @@ pub fn generate_value(tld: ToplevelValueDefinition) -> Result<String, GeneratorE
         ASN1Value::LinkedStructLikeValue(s) => {
             let _members = s
                 .iter()
-                .map(|(_, val)| value_to_tokens(val.value(), None))
+                .map(|(_, _, val)| value_to_tokens(val.value(), None))
                 .collect::<Result<Vec<String>, _>>()?;
             todo!()
         }
