@@ -5,7 +5,7 @@ macro_rules! e2e_pdu {
         fn $suite() {
             assert_eq!(
                 rasn_compiler::Compiler::new()
-                    .with_backend(ros_backend::ros::Ros)
+                    .with_backend(ros_backend::msgs::Msgs)
                     .add_asn_literal(&format!(
                         "TestModule DEFINITIONS AUTOMATIC TAGS::= BEGIN {} END",
                         $asn1
@@ -13,8 +13,8 @@ macro_rules! e2e_pdu {
                     .compile_to_string()
                     .unwrap()
                     .generated
-                    .replace("#<typedef>\n", "")
-                    .replace("\n#</typedef>", "")
+                    .replace("<typedef>\n", "")
+                    .replace("\n</typedef>", "")
                     .lines()
                     .skip(1)
                     .collect::<Vec<&str>>()
