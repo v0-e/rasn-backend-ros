@@ -382,7 +382,10 @@ pub fn format_default_methods(
     let mut output = "".to_string();
     for member in members {
         if let Some(value) = member.default_value.as_ref() {
-            let val = to_ros_const_case(&value_to_tokens(value, Some(&type_to_tokens(&member.ty)?.to_string()))?);
+            let val = match value {
+                ASN1Value::EnumeratedValue { .. } => continue, /* TODO */
+                _ => value_to_tokens(value, Some(&type_to_tokens(&member.ty)?.to_string()))?
+            };
             // TODO generalize
             let ty = match value {
                 ASN1Value::LinkedNestedValue { supertypes: _, value } => {

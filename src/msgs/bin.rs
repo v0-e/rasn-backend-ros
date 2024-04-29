@@ -26,7 +26,6 @@ fn main() {
         )
         .compile_to_string();
     let generated = &compiler_res.unwrap().generated;
-    std::fs::write("out/ros.msg", generated).unwrap();
 
     // Split generated code into individual messages
     let re_name = Regex::new(r"##\s([\w-]+)\s(\w+)\b").unwrap();
