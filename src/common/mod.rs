@@ -49,6 +49,11 @@ pub fn to_ros_const_case(input: &str) -> String {
 }
 
 pub fn to_ros_title_case(input: &str) -> String {
-    input.replace('-', "")
+    if !input.is_empty() {
+        let input = input.replace('-', "");
+        input[0..1].to_uppercase() + &input[1..]
+    } else {
+        input.to_string()
+    }
 }
 
