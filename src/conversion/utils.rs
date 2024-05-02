@@ -131,17 +131,16 @@ pub fn get_choice_members_names(choice: &Choice) -> Vec<NameType> {
     choice
         .options
         .iter()
-        .map(|member| {
-            (NameType {
+        .map(|member| 
+            NameType {
                 name: member.name.clone(),
                 ty: constraints_and_type_name(&member.ty, &member.name, &"".to_string())
                     .unwrap()
                     .1,
                 is_primitive: member.ty.is_builtin_type(),
                 inner_types: None,
-            })
-        })
-        .collect::<Vec<NameType>>()
+            }
+        ).collect::<Vec<NameType>>()
 }
 
 fn constraints_and_type_name(
