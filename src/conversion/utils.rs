@@ -1,12 +1,12 @@
 use rasn_compiler::intermediate::{
     constraints::Constraint,
-    information_object::{InformationObjectClass, InformationObjectField},
+    information_object::InformationObjectField,
     types::{Choice, SequenceOrSet},
     ASN1Type, ASN1Value, CharacterStringType, IntegerType,
 };
-use rasn_compiler::prelude:: {*, ir::*};
+use rasn_compiler::prelude::{ir::*, *};
 
-use crate::common::{IntegerTypeExt, to_ros_title_case};
+use crate::common::{to_ros_title_case, IntegerTypeExt};
 
 macro_rules! error {
     ($kind:ident, $($arg:tt)*) => {
@@ -29,55 +29,118 @@ pub fn format_comments(comments: &str) -> Result<String, GeneratorError> {
     }
 }
 
-#[derive(Clone)]
-pub struct NameType {
-    pub name: String,
-    pub ty: String,
-    pub is_primitive: bool,
-}
-
-
 pub fn inner_name(name: &String, parent_name: &String) -> String {
     format!("{}{}", parent_name, name)
 }
 
+#[derive(Clone, Debug)]
+pub struct NameType {
+    pub name: String,
+    pub ty: String,
+    pub is_primitive: bool,
+    pub inner_types: Option<InnerTypes>,
+}
+
+#[derive(Clone, Debug)]
+pub enum InnerTypes {
+    Choice(InnerTypesChoice),
+}
+
+#[derive(Clone, Debug)]
+pub struct InnerTypesChoice {
+    pub linked_with: String,
+    pub options: Vec<NameType>,
+}
+
+#[derive(Clone, Debug)]
 pub struct NamedSeqMember {
     pub name_type: NameType,
     pub is_optional: bool,
     pub has_default: bool,
 }
 
-pub fn get_sequence_or_set_members_names(
-    sequence_or_set: &SequenceOrSet,
-) -> Vec<NamedSeqMember> {
-    sequence_or_set.members
-        .iter().
-        map(|member| 
-            NamedSeqMember {
+fn get_inner_types_names(ty: &ASN1Type) -> Option<InnerTypes> {
+    match ty {
+        ASN1Type::InformationObjectFieldReference(r) => {
+            if let Constraint::TableConstraint(ref tc) = r.constraints[0] {
+                let object_set = &tc.object_set;
+                let mut names = vec![];
+                for value in &object_set.values {
+                    if let ObjectSetValue::Inline(ref i) = value {
+                        match i {
+                            InformationObjectFields::DefaultSyntax(ds) => {
+                                let mut name = "".to_string();
+                                let mut ty: ASN1Type = ASN1Type::Null;
+                                ds.iter().for_each(|f| match f {
+                                    InformationObjectField::TypeField(f) => ty = f.ty.clone(),
+                                    InformationObjectField::FixedValueField(f) => {
+                                        name = value_to_tokens(&f.value, None).unwrap()
+                                    }
+                                    _ => todo!(),
+                                });
+                                names.push(NameType {
+                                    name: name.clone(),
+                                    ty: constraints_and_type_name(&ty, &name, &"".to_string())
+                                        .unwrap()
+                                        .1,
+                                    is_primitive: ty.is_builtin_type(),
+                                    inner_types: None,
+                                });
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                }
+                let linked_with = tc
+                    .linked_fields
+                    .get(0)
+                    .map(|f| f.field_name.clone())
+                    .unwrap_or_default();
+                Some(InnerTypes::Choice(InnerTypesChoice {
+                    linked_with,
+                    options: names,
+                }))
+            } else {
+                unreachable!()
+            }
+        }
+        _ => None,
+    }
+}
+
+pub fn get_sequence_or_set_members_names(sequence_or_set: &SequenceOrSet) -> Vec<NamedSeqMember> {
+    sequence_or_set
+        .members
+        .iter()
+        .map(|member| NamedSeqMember {
             name_type: NameType {
                 name: member.name.clone(),
-                ty: constraints_and_type_name(&member.ty, &member.name, &"".to_string()).unwrap().1,
-                is_primitive: !matches!(member.ty, ASN1Type::ElsewhereDeclaredType(_))
-            }, 
+                ty: constraints_and_type_name(&member.ty, &member.name, &"".to_string())
+                    .unwrap()
+                    .1,
+                is_primitive: member.ty.is_builtin_type(),
+                inner_types: get_inner_types_names(&member.ty),
+            },
             is_optional: member.is_optional,
-            has_default: member.default_value.is_some()
-            }
-        )
+            has_default: member.default_value.is_some(),
+        })
         .collect::<Vec<NamedSeqMember>>()
 }
 
-pub fn get_choice_members_names(
-    choice: &Choice,
-) -> Vec<NameType> {
-    choice.options
-        .iter().
-        map(|member| (
-            NameType {
+pub fn get_choice_members_names(choice: &Choice) -> Vec<NameType> {
+    choice
+        .options
+        .iter()
+        .map(|member| {
+            (NameType {
                 name: member.name.clone(),
-                ty: constraints_and_type_name(&member.ty, &member.name, &"".to_string()).unwrap().1,
-                is_primitive: !matches!(member.ty, ASN1Type::ElsewhereDeclaredType(_))
-            }
-        ))
+                ty: constraints_and_type_name(&member.ty, &member.name, &"".to_string())
+                    .unwrap()
+                    .1,
+                is_primitive: member.ty.is_builtin_type(),
+                inner_types: None,
+            })
+        })
         .collect::<Vec<NameType>>()
 }
 
@@ -89,17 +152,7 @@ fn constraints_and_type_name(
     Ok(match ty {
         ASN1Type::Null => (vec![], "byte".into()),
         ASN1Type::Boolean(b) => (b.constraints.clone(), "BOOLEAN".into()),
-        ASN1Type::Integer(i) => (i.constraints.clone(), "INTEGER".into()),/*{
-            let per_constraints = per_visible_range_constraints(true, &i.constraints)?;
-            (
-                i.constraints.clone(),
-                int_type_token(
-                    per_constraints.min(),
-                    per_constraints.max(),
-                    per_constraints.is_extensible(),
-                ),
-            )
-        }*/
+        ASN1Type::Integer(i) => (i.constraints.clone(), "INTEGER".into()),
         ASN1Type::Real(_) => (vec![], "float64".into()),
         ASN1Type::ObjectIdentifier(_o) => todo!(),
         ASN1Type::BitString(_b) => todo!(),
@@ -107,7 +160,10 @@ fn constraints_and_type_name(
         ASN1Type::GeneralizedTime(_o) => todo!(),
         ASN1Type::UTCTime(_o) => todo!(),
         ASN1Type::Time(_t) => todo!(),
-        ASN1Type::CharacterString(c) => (c.constraints.clone(), string_type(&c.ty).unwrap_or("STRING".into())),
+        ASN1Type::CharacterString(c) => (
+            c.constraints.clone(),
+            string_type(&c.ty).unwrap_or("STRING".into()),
+        ),
         ASN1Type::Enumerated(_)
         | ASN1Type::Choice(_)
         | ASN1Type::Sequence(_)
@@ -117,18 +173,22 @@ fn constraints_and_type_name(
             let (_, inner_type) = constraints_and_type_name(&s.element_type, name, parent_name)?;
             (s.constraints().clone(), format!("{inner_type}[]").into())
         }
-        ASN1Type::ElsewhereDeclaredType(e) => (e.constraints.clone(), to_ros_title_case(&e.identifier)),
+        ASN1Type::ElsewhereDeclaredType(e) => {
+            (e.constraints.clone(), to_ros_title_case(&e.identifier))
+        }
         ASN1Type::InformationObjectFieldReference(_)
         | ASN1Type::EmbeddedPdv
         | ASN1Type::External => {
             let tx = &ty.constraints().unwrap()[0];
             let rname = if let Constraint::TableConstraint(ref tc) = tx {
-                let v = &tc.object_set.values[0];
-                if let ObjectSetValue::Reference(ref r) = v {
-                    r.clone()
-                } else {
-                    "".to_string()
-                }
+                tc.object_set
+                    .values
+                    .iter()
+                    .find_map(|v| match v {
+                        ObjectSetValue::Reference(ref r) => Some(r.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_default()
             } else {
                 "".to_string()
             };
@@ -151,59 +211,6 @@ pub fn string_type(c_type: &CharacterStringType) -> Result<String, GeneratorErro
         CharacterStringType::UTF8String => Ok("UTF8String".into()),
         CharacterStringType::BMPString => Ok("BMPString".into()),
         CharacterStringType::PrintableString => Ok("PrintableString".into()),
-    }
-}
-
-pub fn type_to_tokens(ty: &ASN1Type) -> Result<String, GeneratorError> {
-    match ty {
-        ASN1Type::Null => todo!(),
-        ASN1Type::Boolean(_) => Ok("bool".into()),
-        ASN1Type::Integer(i) => Ok(i.int_type().to_str().to_string()),
-        ASN1Type::Real(_) => Ok("float64".into()),
-        ASN1Type::BitString(_) => Ok("BitString".into()),
-        ASN1Type::OctetString(_) => Ok("OctetString".into()),
-        ASN1Type::CharacterString(CharacterString { ty, .. }) => string_type(ty),
-        ASN1Type::Enumerated(_) => Err(error!(
-            NotYetInplemented,
-            "Enumerated values are currently unsupported!"
-        )),
-        ASN1Type::Choice(_) => Err(error!(
-            NotYetInplemented,
-            "Choice values are currently unsupported!"
-        )),
-        ASN1Type::Sequence(_) => Err(error!(
-            NotYetInplemented,
-            "Sequence values are currently unsupported!"
-        )),
-        ASN1Type::SetOf(so) | ASN1Type::SequenceOf(so) => {
-            let _inner = type_to_tokens(&so.element_type)?;
-            Ok("SequenceOf".into())
-        }
-        ASN1Type::ObjectIdentifier(_) => Err(error!(
-            NotYetInplemented,
-            "Object Identifier values are currently unsupported!"
-        )),
-        ASN1Type::Set(_) => Err(error!(
-            NotYetInplemented,
-            "Set values are currently unsupported!"
-        )),
-        ASN1Type::ElsewhereDeclaredType(e) => Ok(e.identifier.clone()),
-        ASN1Type::InformationObjectFieldReference(_) => Err(error!(
-            NotYetInplemented,
-            "Information Object field reference values are currently unsupported!"
-        )),
-        ASN1Type::Time(_) => Err(error!(
-            NotYetInplemented,
-            "Time values are currently unsupported!"
-        )),
-        ASN1Type::GeneralizedTime(_) => Ok("GeneralizedTime".into()),
-        ASN1Type::UTCTime(_) => Ok("UtcTime".into()),
-        ASN1Type::EmbeddedPdv | ASN1Type::External => Ok("Any".into()),
-        ASN1Type::ChoiceSelectionType(c) => {
-            let _choice = &c.choice_name;
-            let _option = &c.selected_option;
-            todo!()
-        }
     }
 }
 
@@ -260,9 +267,7 @@ pub fn value_to_tokens(
         ASN1Value::EnumeratedValue {
             enumerated,
             enumerable,
-        } => {
-            Ok(format!("{}_{}", enumerated, enumerable))
-        }
+        } => Ok(format!("{}_{}", enumerated, enumerable)),
         ASN1Value::LinkedElsewhereDefinedValue { identifier: e, .. }
         | ASN1Value::ElsewhereDeclaredValue { identifier: e, .. } => Ok(e.to_string()),
         ASN1Value::ObjectIdentifier(oid) => {
@@ -283,9 +288,10 @@ pub fn value_to_tokens(
                 .collect::<Result<Vec<_>, _>>()?;
             todo!()
         }
-        ASN1Value::LinkedNestedValue { supertypes: _, value } => {
-            Ok(value_to_tokens(value, type_name)?)
-        }
+        ASN1Value::LinkedNestedValue {
+            supertypes: _,
+            value,
+        } => Ok(value_to_tokens(value, type_name)?),
         ASN1Value::LinkedIntValue {
             integer_type,
             value,
@@ -362,63 +368,6 @@ pub fn format_sequence_or_set_of_item_type(
     }
 }
 
-/// Resolves the custom syntax declared in an information object class' WITH SYNTAX clause
-pub fn resolve_standard_syntax(
-    class: &InformationObjectClass,
-    application: &[InformationObjectField],
-) -> Result<(ASN1Value, Vec<(usize, ASN1Type)>), GeneratorError> {
-    let mut key = None;
-    let mut field_index_map = Vec::<(usize, ASN1Type)>::new();
-
-    let key_index = class
-        .fields
-        .iter()
-        .enumerate()
-        .find_map(|(i, f)| f.is_unique.then_some(i))
-        .ok_or_else(|| GeneratorError {
-            details: format!("Could not find key for class {class:?}"),
-            kind: GeneratorErrorType::MissingClassKey,
-            ..Default::default()
-        })?;
-
-    let mut appl_iter = application.iter().enumerate();
-    'syntax_matching: for class_field in &class.fields {
-        if let Some((index, field)) = appl_iter.next() {
-            if class_field.identifier.identifier() == field.identifier() {
-                match field {
-                    InformationObjectField::TypeField(f) => {
-                        field_index_map.push((index, f.ty.clone()));
-                    }
-                    InformationObjectField::FixedValueField(f) => {
-                        if index == key_index {
-                            key = Some(f.value.clone());
-                        }
-                    }
-                    InformationObjectField::ObjectSetField(_) => todo!(),
-                }
-            } else if !class_field.is_optional {
-                return Err(GeneratorError {
-                    top_level_declaration: None,
-                    details: "Syntax mismatch while resolving information object.".to_string(),
-                    kind: GeneratorErrorType::SyntaxMismatch,
-                });
-            } else {
-                continue 'syntax_matching;
-            }
-        }
-    }
-    field_index_map.sort_by(|&(a, _), &(b, _)| a.cmp(&b));
-    let types = field_index_map.into_iter().collect();
-    match key {
-        Some(k) => Ok((k, types)),
-        None => Err(GeneratorError {
-            top_level_declaration: None,
-            details: "Could not find class key!".into(),
-            kind: GeneratorErrorType::MissingClassKey,
-        }),
-    }
-}
-
 trait ASN1ValueExt {
     fn is_const_type(&self) -> bool;
 }
@@ -460,4 +409,3 @@ impl ASN1ValueExt for ASN1Type {
         }
     }
 }
-

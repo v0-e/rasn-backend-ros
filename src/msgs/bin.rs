@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use regex::Regex;
 use clap::Parser;
+use regex::Regex;
 
 use rasn_compiler::prelude::*;
 use ros_backend::msgs::Msgs;
@@ -21,9 +21,7 @@ fn main() {
     // Compile ROS messages
     let compiler_res = Compiler::new()
         .with_backend(Msgs)
-        .add_asn_sources_by_path(
-            args.paths.iter(),
-        )
+        .add_asn_sources_by_path(args.paths.iter())
         .compile_to_string();
     let generated = &compiler_res.unwrap().generated;
 

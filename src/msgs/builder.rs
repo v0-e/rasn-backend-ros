@@ -3,9 +3,9 @@ use std::{collections::BTreeMap, error::Error};
 use rasn_compiler::prelude::ir::*;
 use rasn_compiler::prelude::*;
 
+use crate::common::*;
 use crate::msgs::{generate, Msgs};
 use crate::msgs::{template::*, utils::*};
-use crate::common::*;
 
 pub(crate) const INNER_ARRAY_LIKE_PREFIX: &str = "Anonymous_";
 
@@ -19,11 +19,13 @@ impl Backend for Msgs {
             tlds.into_iter()
                 .fold((vec![], vec![]), |mut acc, tld| match generate(tld) {
                     Ok(s) => {
-                        s.len().gt(&0).then(|| 
-                            acc.0.push(format!("<typedef>\n\
+                        s.len().gt(&0).then(|| {
+                            acc.0.push(format!(
+                                "<typedef>\n\
                                                 {s}\n\
-                                                </typedef>"))
-                        );
+                                                </typedef>"
+                            ))
+                        });
                         acc
                     }
                     Err(e) => {
@@ -51,8 +53,7 @@ pub fn merge_tlds(tlds: Vec<ToplevelDefinition>) -> Vec<ToplevelDefinition> {
         } else {
             merged_tlds.push(tld.clone());
         }
-    }
-    );
+    });
     merge_to.iter().for_each(|(tld, ty)| {
         for t in &mut merged_tlds {
             if let ToplevelDefinition::Type(tt) = t {
@@ -61,7 +62,11 @@ pub fn merge_tlds(tlds: Vec<ToplevelDefinition>) -> Vec<ToplevelDefinition> {
                     if let ASN1Type::Integer(ref mut int) = tt.ty {
                         let value = match &tld {
                             ToplevelDefinition::Value(v) => {
-                                if let ASN1Value::LinkedIntValue { integer_type: _ , value } = &v.value {
+                                if let ASN1Value::LinkedIntValue {
+                                    integer_type: _,
+                                    value,
+                                } = &v.value
+                                {
                                     value
                                 } else {
                                     unreachable!()
@@ -274,7 +279,11 @@ pub fn generate_value(tld: ToplevelValueDefinition) -> Result<String, GeneratorE
         ASN1Value::LinkedIntValue { .. } => generate_integer_value(tld),
         ASN1Value::BitString(_) if ty == BIT_STRING => todo!(),
         ASN1Value::OctetString(_) if ty == OCTET_STRING => todo!(),
-        ASN1Value::Choice {variant_name, inner_value, ..} => {
+        ASN1Value::Choice {
+            variant_name,
+            inner_value,
+            ..
+        } => {
             if inner_value.is_const_type() {
                 call_template!(
                     const_choice_value_template,
@@ -675,9 +684,9 @@ pub fn generate_information_object_set(
                 }
             }
 
-            let variants = ids
-                .iter()
-                .map(|(variant_name, type_id, _)| format!("{type_id} {}", to_ros_snake_case(variant_name)));
+            let variants = ids.iter().map(|(variant_name, type_id, _)| {
+                format!("{type_id} {}", to_ros_snake_case(variant_name))
+            });
 
             field_enums.push(format!(
                 "## OPEN-TYPE {field_enum_name}\n{class_unique_id_type_name} choice\n{}",

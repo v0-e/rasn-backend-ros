@@ -1,5 +1,4 @@
-use rasn_compiler::prelude::ir::{ASN1Information, ASN1Type};
-use rasn_compiler::prelude::*;
+use rasn_compiler::prelude::{ir::ASN1Type, *};
 
 mod builder;
 mod template;
@@ -10,26 +9,28 @@ pub struct Conversion {
     options: ConversionOptions,
 }
 pub struct ConversionOptions {
-    main_pdu: String
+    main_pdu: String,
 }
 impl Default for ConversionOptions {
     fn default() -> Self {
         Self {
-            main_pdu: "pdu".into()
+            main_pdu: "pdu".into(),
         }
     }
 }
 impl Conversion {
     pub fn set_main_pdu_name(mut self, main_pdu_name: &str) -> Self {
-         self.options.main_pdu = main_pdu_name.to_owned();
-         self
+        self.options.main_pdu = main_pdu_name.to_owned();
+        self
     }
-    
 }
 
 use builder::*;
 
-fn generate(options: &ConversionOptions, tld: ToplevelDefinition) -> Result<String, GeneratorError> {
+fn generate(
+    options: &ConversionOptions,
+    tld: ToplevelDefinition,
+) -> Result<String, GeneratorError> {
     match tld {
         ToplevelDefinition::Type(t) => {
             if t.parameterization.is_some() {
@@ -43,7 +44,9 @@ fn generate(options: &ConversionOptions, tld: ToplevelDefinition) -> Result<Stri
                 ASN1Type::BitString(_) => generate_bit_string(&options, t),
                 ASN1Type::CharacterString(_) => generate_character_string(&options, t),
                 ASN1Type::Sequence(_) | ASN1Type::Set(_) => generate_sequence_or_set(&options, t),
-                ASN1Type::SequenceOf(_) | ASN1Type::SetOf(_) => generate_sequence_or_set_of(&options, t),
+                ASN1Type::SequenceOf(_) | ASN1Type::SetOf(_) => {
+                    generate_sequence_or_set_of(&options, t)
+                }
                 ASN1Type::ElsewhereDeclaredType(_) => generate_typealias(&options, t),
                 ASN1Type::Choice(_) => generate_choice(&options, t),
                 ASN1Type::OctetString(_) => generate_octet_string(&options, t),
@@ -64,7 +67,6 @@ fn generate(options: &ConversionOptions, tld: ToplevelDefinition) -> Result<Stri
         }
         ToplevelDefinition::Value(v) => generate_value(v),
         ToplevelDefinition::Information(i) => match i.value {
-            ASN1Information::ObjectSet(_) => generate_information_object_set(i),
             _ => Ok("".into()),
         },
     }

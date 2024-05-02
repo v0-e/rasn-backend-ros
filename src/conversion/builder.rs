@@ -1,10 +1,10 @@
-use std::{collections::BTreeMap, error::Error};
+use std::error::Error;
 
-use rasn_compiler::prelude::{*, ir::*};
+use rasn_compiler::prelude::{ir::*, *};
 
+use crate::common::{to_ros_const_case, to_ros_title_case, IntegerTypeExt};
 use crate::conversion::{generate, Conversion, ConversionOptions};
 use crate::conversion::{template::*, utils::*};
-use crate::common::{IntegerTypeExt, to_ros_snake_case, to_ros_const_case, to_ros_title_case};
 
 pub(crate) const INNER_ARRAY_LIKE_PREFIX: &str = "Anonymous_";
 
@@ -15,21 +15,24 @@ impl Backend for Conversion {
     ) -> Result<GeneratedModule, GeneratorError> {
         let tlds = merge_tlds(tlds);
         let (pdus, warnings): (Vec<String>, Vec<Box<dyn Error>>) =
-            tlds.into_iter()
-                .fold((vec![], vec![]), |mut acc, tld| match generate(&self.options, tld) {
+            tlds.into_iter().fold((vec![], vec![]), |mut acc, tld| {
+                match generate(&self.options, tld) {
                     Ok(s) => {
-                        s.len().gt(&0).then(|| 
-                            acc.0.push(format!("#<typedef>\n\
+                        s.len().gt(&0).then(|| {
+                            acc.0.push(format!(
+                                "#<typedef>\n\
                                                 {s}\n\
-                                                #</typedef>"))
-                        );
+                                                #</typedef>"
+                            ))
+                        });
                         acc
                     }
                     Err(e) => {
                         acc.1.push(Box::new(e));
                         acc
                     }
-                });
+                }
+            });
         Ok(GeneratedModule {
             generated: Some(format!("{}", pdus.join("\n\n"))),
             warnings,
@@ -40,6 +43,8 @@ impl Backend for Conversion {
 pub fn merge_tlds(tlds: Vec<ToplevelDefinition>) -> Vec<ToplevelDefinition> {
     let mut merged_tlds = Vec::<ToplevelDefinition>::with_capacity(tlds.len());
     let mut merge_to = Vec::<(&ToplevelDefinition, &String)>::new();
+
+    // Add value to type's distinguished values
     tlds.iter().for_each(|tld| {
         if let ToplevelDefinition::Value(v) = &tld {
             if let ASN1Value::LinkedIntValue { .. } = &v.value {
@@ -50,17 +55,19 @@ pub fn merge_tlds(tlds: Vec<ToplevelDefinition>) -> Vec<ToplevelDefinition> {
         } else {
             merged_tlds.push(tld.clone());
         }
-    }
-    );
+    });
     merge_to.iter().for_each(|(tld, ty)| {
         for t in &mut merged_tlds {
             if let ToplevelDefinition::Type(tt) = t {
                 if tt.name == **ty {
-                    // Add value to type's distinguished values
                     if let ASN1Type::Integer(ref mut int) = tt.ty {
                         let value = match &tld {
                             ToplevelDefinition::Value(v) => {
-                                if let ASN1Value::LinkedIntValue { integer_type: _ , value } = &v.value {
+                                if let ASN1Value::LinkedIntValue {
+                                    integer_type: _,
+                                    value,
+                                } = &v.value
+                                {
                                     value
                                 } else {
                                     unreachable!()
@@ -86,10 +93,47 @@ pub fn merge_tlds(tlds: Vec<ToplevelDefinition>) -> Vec<ToplevelDefinition> {
             }
         }
     });
+
+    // Resolve object set references
+    let mut object_sets = Vec::<(String, ObjectSet)>::new();
+    merged_tlds.iter().for_each(|tld| {
+        if let ToplevelDefinition::Information(i) = tld {
+            if let ASN1Information::ObjectSet(os) = &i.value {
+                object_sets.push((tld.name().clone(), os.clone()));
+            }
+        }
+    });
+    merged_tlds.iter_mut().for_each(|tld| {
+        if let ToplevelDefinition::Type(t) = tld {
+            if let ASN1Type::Sequence(ref mut s) = t.ty {
+                s.members.iter_mut().for_each(|m| {
+                    if let ASN1Type::InformationObjectFieldReference(ref mut r) = m.ty {
+                        if let Constraint::TableConstraint(ref mut c) = r.constraints[0] {
+                            if let ObjectSetValue::Reference(ref mut osvr) = c.object_set.values[0]
+                            {
+                                object_sets
+                                    .iter()
+                                    .find(|s| s.0 == *osvr)
+                                    .and_then(|(_, os)| {
+                                        let mut os = os.clone();
+                                        os.values.push(c.object_set.values[0].clone());
+                                        c.object_set = os;
+                                        Some(())
+                                    });
+                            }
+                        }
+                    }
+                });
+            }
+        }
+    });
     merged_tlds
 }
 
-pub fn generate_typealias(options: &ConversionOptions, tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
+pub fn generate_typealias(
+    options: &ConversionOptions,
+    tld: ToplevelTypeDefinition,
+) -> Result<String, GeneratorError> {
     if let ASN1Type::ElsewhereDeclaredType(dec) = &tld.ty {
         Ok(typealias_template(
             &options,
@@ -142,7 +186,10 @@ pub fn generate_integer_value(tld: ToplevelValueDefinition) -> Result<String, Ge
     }
 }
 
-pub fn generate_integer(options: &ConversionOptions, tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
+pub fn generate_integer(
+    options: &ConversionOptions,
+    tld: ToplevelTypeDefinition,
+) -> Result<String, GeneratorError> {
     if let ASN1Type::Integer(_) = tld.ty {
         Ok(integer_template(
             &options,
@@ -158,7 +205,10 @@ pub fn generate_integer(options: &ConversionOptions, tld: ToplevelTypeDefinition
     }
 }
 
-pub fn generate_bit_string(options: &ConversionOptions, tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
+pub fn generate_bit_string(
+    options: &ConversionOptions,
+    tld: ToplevelTypeDefinition,
+) -> Result<String, GeneratorError> {
     if let ASN1Type::BitString(_) = tld.ty {
         Ok(bit_string_template(
             &options,
@@ -174,7 +224,10 @@ pub fn generate_bit_string(options: &ConversionOptions, tld: ToplevelTypeDefinit
     }
 }
 
-pub fn generate_octet_string(options: &ConversionOptions, tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
+pub fn generate_octet_string(
+    options: &ConversionOptions,
+    tld: ToplevelTypeDefinition,
+) -> Result<String, GeneratorError> {
     if let ASN1Type::OctetString(ref _oct_str) = tld.ty {
         Ok(octet_string_template(
             &options,
@@ -190,7 +243,10 @@ pub fn generate_octet_string(options: &ConversionOptions, tld: ToplevelTypeDefin
     }
 }
 
-pub fn generate_character_string(options: &ConversionOptions, tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
+pub fn generate_character_string(
+    options: &ConversionOptions,
+    tld: ToplevelTypeDefinition,
+) -> Result<String, GeneratorError> {
     if let ASN1Type::CharacterString(ref char_str) = tld.ty {
         Ok(char_string_template(
             &options,
@@ -207,7 +263,10 @@ pub fn generate_character_string(options: &ConversionOptions, tld: ToplevelTypeD
     }
 }
 
-pub fn generate_boolean(options: &ConversionOptions, tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
+pub fn generate_boolean(
+    options: &ConversionOptions,
+    tld: ToplevelTypeDefinition,
+) -> Result<String, GeneratorError> {
     if let ASN1Type::Boolean(_) = tld.ty {
         Ok(boolean_template(
             options,
@@ -270,7 +329,11 @@ pub fn generate_value(tld: ToplevelValueDefinition) -> Result<String, GeneratorE
         ASN1Value::LinkedIntValue { .. } => generate_integer_value(tld),
         ASN1Value::BitString(_) if ty == BIT_STRING => todo!(),
         ASN1Value::OctetString(_) if ty == OCTET_STRING => todo!(),
-        ASN1Value::Choice {variant_name, inner_value, .. } => {
+        ASN1Value::Choice {
+            variant_name,
+            inner_value,
+            ..
+        } => {
             if inner_value.is_const_type() {
                 call_template!(
                     const_choice_value_template,
@@ -359,10 +422,7 @@ pub fn generate_value(tld: ToplevelValueDefinition) -> Result<String, GeneratorE
 }
 
 pub fn generate_any(tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
-    Ok(any_template(
-        &format_comments(&tld.comments)?,
-        &tld.name,
-    ))
+    Ok(any_template(&format_comments(&tld.comments)?, &tld.name))
 }
 
 pub fn generate_generalized_time(tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
@@ -397,10 +457,7 @@ pub fn generate_utc_time(tld: ToplevelTypeDefinition) -> Result<String, Generato
 
 pub fn generate_oid(tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
     if let ASN1Type::ObjectIdentifier(_oid) = &tld.ty {
-        Ok(oid_template(
-            &format_comments(&tld.comments)?,
-            &tld.name,
-        ))
+        Ok(oid_template(&format_comments(&tld.comments)?, &tld.name))
     } else {
         Err(GeneratorError::new(
             Some(ToplevelDefinition::Type(tld)),
@@ -412,10 +469,7 @@ pub fn generate_oid(tld: ToplevelTypeDefinition) -> Result<String, GeneratorErro
 
 pub fn generate_null(tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
     if let ASN1Type::Null = tld.ty {
-        Ok(null_template(
-            &format_comments(&tld.comments)?,
-            &tld.name,
-        ))
+        Ok(null_template(&format_comments(&tld.comments)?, &tld.name))
     } else {
         Err(GeneratorError::new(
             Some(ToplevelDefinition::Type(tld)),
@@ -425,7 +479,10 @@ pub fn generate_null(tld: ToplevelTypeDefinition) -> Result<String, GeneratorErr
     }
 }
 
-pub fn generate_enumerated(options: &ConversionOptions, tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
+pub fn generate_enumerated(
+    options: &ConversionOptions,
+    tld: ToplevelTypeDefinition,
+) -> Result<String, GeneratorError> {
     if let ASN1Type::Enumerated(_) = tld.ty {
         Ok(enumerated_template(
             &options,
@@ -441,7 +498,10 @@ pub fn generate_enumerated(options: &ConversionOptions, tld: ToplevelTypeDefinit
     }
 }
 
-pub fn generate_choice(options: &ConversionOptions, tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
+pub fn generate_choice(
+    options: &ConversionOptions,
+    tld: ToplevelTypeDefinition,
+) -> Result<String, GeneratorError> {
     if let ASN1Type::Choice(ref choice) = tld.ty {
         let members = get_choice_members_names(choice);
         Ok(choice_template(
@@ -459,7 +519,10 @@ pub fn generate_choice(options: &ConversionOptions, tld: ToplevelTypeDefinition)
     }
 }
 
-pub fn generate_sequence_or_set(options: &ConversionOptions, tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
+pub fn generate_sequence_or_set(
+    options: &ConversionOptions,
+    tld: ToplevelTypeDefinition,
+) -> Result<String, GeneratorError> {
     match tld.ty {
         ASN1Type::Sequence(ref seq) | ASN1Type::Set(ref seq) => {
             let members = get_sequence_or_set_members_names(seq);
@@ -478,7 +541,10 @@ pub fn generate_sequence_or_set(options: &ConversionOptions, tld: ToplevelTypeDe
     }
 }
 
-pub fn generate_sequence_or_set_of(options: &ConversionOptions, tld: ToplevelTypeDefinition) -> Result<String, GeneratorError> {
+pub fn generate_sequence_or_set_of(
+    options: &ConversionOptions,
+    tld: ToplevelTypeDefinition,
+) -> Result<String, GeneratorError> {
     let (is_set_of, seq_or_set_of) = match &tld.ty {
         ASN1Type::SetOf(se_of) => (true, se_of),
         ASN1Type::SequenceOf(se_of) => (false, se_of),
@@ -492,11 +558,9 @@ pub fn generate_sequence_or_set_of(options: &ConversionOptions, tld: ToplevelTyp
     };
     let anonymous_item = match seq_or_set_of.element_type.as_ref() {
         ASN1Type::ElsewhereDeclaredType(_) => None,
-        n => Some(
-            generate(
+        n => Some(generate(
             &ConversionOptions::default(),
-ToplevelDefinition::Type(
-            ToplevelTypeDefinition {
+            ToplevelDefinition::Type(ToplevelTypeDefinition {
                 parameterization: None,
                 comments: format!(
                     " Anonymous {} OF member ",
@@ -506,8 +570,8 @@ ToplevelDefinition::Type(
                 ty: n.clone(),
                 tag: None,
                 index: None,
-            },
-        ))?),
+            }),
+        )?),
     }
     .unwrap_or_default();
     let member_type = match seq_or_set_of.element_type.as_ref() {
@@ -522,152 +586,4 @@ ToplevelDefinition::Type(
         &anonymous_item,
         &member_type,
     ))
-}
-
-pub fn generate_information_object_set(
-    tld: ToplevelInformationDefinition,
-) -> Result<String, GeneratorError> {
-    if let ASN1Information::ObjectSet(o) = &tld.value {
-        let class: &InformationObjectClass = match tld.class {
-            Some(ClassLink::ByReference(ref c)) => c,
-            _ => {
-                return Err(GeneratorError::new(
-                    None,
-                    "Missing class link in Information Object Set",
-                    GeneratorErrorType::MissingClassKey,
-                ))
-            }
-        };
-        let mut keys_to_types = o
-            .values
-            .iter()
-            .map(|v| match v {
-                ObjectSetValue::Reference(r) => Err(GeneratorError::new(
-                    None,
-                    &format!("Could not resolve reference of Information Object Set {r}"),
-                    GeneratorErrorType::MissingClassKey,
-                )),
-                ObjectSetValue::Inline(InformationObjectFields::CustomSyntax(_)) => {
-                    Err(GeneratorError::new(
-                        Some(ToplevelDefinition::Information(tld.clone())),
-                        "Unexpectedly encountered unresolved custom syntax!",
-                        GeneratorErrorType::MissingClassKey,
-                    ))
-                }
-                ObjectSetValue::Inline(InformationObjectFields::DefaultSyntax(s)) => {
-                    resolve_standard_syntax(class, s)
-                }
-            })
-            .collect::<Result<Vec<(ASN1Value, Vec<(usize, ASN1Type)>)>, _>>()?;
-        let mut choices = BTreeMap::<String, Vec<(ASN1Value, ASN1Type)>>::new();
-        for (key, items) in keys_to_types.drain(..) {
-            for (index, item) in items {
-                let id = class
-                    .fields
-                    .get(index)
-                    .map(|f| f.identifier.identifier())
-                    .ok_or_else(|| GeneratorError {
-                        top_level_declaration: Some(ToplevelDefinition::Information(tld.clone())),
-                        details: "Could not find class field for index.".into(),
-                        kind: GeneratorErrorType::SyntaxMismatch,
-                    })?;
-                match choices.get_mut(id) {
-                    Some(entry) => entry.push((key.clone(), item)),
-                    None => {
-                        choices.insert(id.clone(), vec![(key.clone(), item)]);
-                    }
-                }
-            }
-        }
-
-        if choices.is_empty() {
-            for InformationObjectClassField { identifier, .. } in &class.fields {
-                choices.insert(identifier.identifier().clone(), Vec::new());
-            }
-        }
-
-        let name = &tld.name;
-        let class_unique_id_type = class
-            .fields
-            .iter()
-            .find_map(|f| (f.is_unique).then(|| f.ty.clone()))
-            .flatten()
-            .ok_or_else(|| GeneratorError {
-                top_level_declaration: None,
-                details: "Could not determine unique class identifier type.".into(),
-                kind: GeneratorErrorType::SyntaxMismatch,
-            })?;
-        let class_unique_id_type_name = type_to_tokens(&class_unique_id_type)?;
-
-        let mut field_enums = vec![];
-        for (_field_name, fields) in choices.iter() {
-            let field_enum_name = name.clone();
-            let mut ids = vec![];
-            for (index, (id, ty)) in fields.iter().enumerate() {
-                let identifier_value = match id {
-                    ASN1Value::LinkedElsewhereDefinedValue {
-                        can_be_const: false,
-                        ..
-                    } => {
-                        let _tokenized_value =
-                            value_to_tokens(id, Some(&class_unique_id_type_name))?;
-                        "quote!(*#tokenized_value)".into()
-                    }
-                    ASN1Value::LinkedNestedValue { value, .. }
-                        if matches![
-                            &**value,
-                            ASN1Value::LinkedElsewhereDefinedValue {
-                                can_be_const: false,
-                                ..
-                            }
-                        ] =>
-                    {
-                        let _tokenized_value =
-                            value_to_tokens(value, Some(&class_unique_id_type_name))?;
-                        "quote!(*#tokenized_value)".into()
-                    }
-                    ASN1Value::LinkedNestedValue { value, .. }
-                        if matches![&**value, ASN1Value::LinkedElsewhereDefinedValue { .. }] =>
-                    {
-                        value_to_tokens(value, Some(&class_unique_id_type_name))?
-                    }
-                    _ => value_to_tokens(id, Some(&class_unique_id_type_name))?,
-                };
-                let type_id = type_to_tokens(ty).unwrap_or("type?".into());
-                let variant_name = match id {
-                    ASN1Value::LinkedElsewhereDefinedValue {
-                        identifier: ref_id, ..
-                    }
-                    | ASN1Value::ElsewhereDeclaredValue {
-                        identifier: ref_id, ..
-                    } => ref_id.clone(),
-                    _ => format!("{field_enum_name}_{index}"),
-                };
-                if ty.constraints().map_or(true, |c| c.is_empty()) {
-                    ids.push((variant_name, type_id, identifier_value));
-                }
-            }
-
-            let variants = ids
-                .iter()
-                .map(|(variant_name, type_id, _)| format!("{type_id} {}", to_ros_snake_case(variant_name)));
-
-            field_enums.push(format!(
-                "## OPEN-TYPE {field_enum_name}\n{class_unique_id_type_name} choice\n{}",
-                variants.fold("".to_string(), |mut acc, v| {
-                    acc.push_str(&v);
-                    acc.push_str("\n");
-                    acc
-                }),
-            ));
-        }
-
-        Ok(field_enums.join("\n"))
-    } else {
-        Err(GeneratorError::new(
-            Some(ToplevelDefinition::Information(tld)),
-            "Expected Object Set top-level declaration",
-            GeneratorErrorType::Asn1TypeMismatch,
-        ))
-    }
 }

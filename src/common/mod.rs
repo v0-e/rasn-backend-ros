@@ -31,11 +31,13 @@ pub fn to_ros_snake_case(input: &str) -> String {
             if c != '_' && peekable.peek().map_or(false, |next| next.is_uppercase()) {
                 lowercase.push('_');
             }
-        } else { 
+        } else {
             /* underscore before uppercase followed by lowercase, ABx -> a_bx */
-            if c != '_' && 
-               lowercase.len() > 0 && !lowercase.ends_with('_') && 
-               peekable.peek().map_or(false, |next| next.is_lowercase()) {
+            if c != '_'
+                && lowercase.len() > 0
+                && !lowercase.ends_with('_')
+                && peekable.peek().map_or(false, |next| next.is_lowercase())
+            {
                 lowercase.push('_');
             }
             lowercase.push(c.to_ascii_lowercase());
@@ -56,4 +58,3 @@ pub fn to_ros_title_case(input: &str) -> String {
         input.to_string()
     }
 }
-

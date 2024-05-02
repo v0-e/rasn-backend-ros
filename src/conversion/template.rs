@@ -1,9 +1,10 @@
+use crate::common::{to_ros_const_case, to_ros_snake_case, to_ros_title_case};
+use crate::conversion::utils::{InnerTypes, NameType, NamedSeqMember};
 use crate::conversion::ConversionOptions;
-use crate::conversion::utils::{NameType, NamedSeqMember};
-use crate::common::{to_ros_snake_case, to_ros_const_case, to_ros_title_case};
 
-const CONVERSION_TEMPLATE: &str = 
-r#"//// {asn1_type} {name}
+use std::collections::HashMap;
+
+const CONVERSION_TEMPLATE: &str = r#"//// {asn1_type} {name}
 {comments}
 
 #pragma once
@@ -38,38 +39,48 @@ void toStruct_{type}(const {pdu}_msgs::{ros_type}& in, {c_type}_t& out) {
 pub fn conversion_template(
     comments: &str,
     pdu: &str,
-    members: &Vec<NameType>,
+    includes: &Vec<NameType>,
     name: &str,
     asn1_type: &str,
     to_ros_members: &str,
     to_c_members: &str,
-
 ) -> String {
-    let c_includes = members
+    let c_includes = includes
         .iter()
-        .map(|member| 
+        .map(|member| {
             if !member.is_primitive {
-                format!("#include <etsi_its_{pdu}_conversion/convert{dep}.h>", 
-                    pdu = pdu, 
-                    dep = member.ty)
+                format!(
+                    "#include <etsi_its_{pdu}_conversion/convert{dep}.h>",
+                    pdu = pdu,
+                    dep = member.ty
+                )
             } else {
-                format!("#include <etsi_its_{pdu}_coding/{dep}.h>", 
-                    pdu = pdu, 
-                    dep = member.ty) + "\n" +
-                &format!("#include <etsi_its_primitives_conversion/convert{dep}.h>", 
-                    dep = member.ty)
+                format!(
+                    "#include <etsi_its_{pdu}_coding/{dep}.h>",
+                    pdu = pdu,
+                    dep = member.ty
+                ) + "\n"
+                    + &format!(
+                        "#include <etsi_its_primitives_conversion/convert{dep}.h>",
+                        dep = member.ty
+                    )
             }
-        )
+        })
         .collect::<Vec<String>>()
         .join("\n");
-    let ros1_includes = format!("#include <etsi_its_{pdu}_msgs/{ros_fn}.hpp>", 
-        pdu = pdu, 
-        ros_fn = to_ros_title_case(name));
-    let ros2_includes = format!("#include <etsi_its_{pdu}_msgs/msg/{ros_fn}.hpp>", 
-        pdu = pdu, 
-        ros_fn = to_ros_snake_case(name));
+    let ros1_includes = format!(
+        "#include <etsi_its_{pdu}_msgs/{ros_fn}.hpp>",
+        pdu = pdu,
+        ros_fn = to_ros_title_case(name)
+    );
+    let ros2_includes = format!(
+        "#include <etsi_its_{pdu}_msgs/msg/{ros_fn}.hpp>",
+        pdu = pdu,
+        ros_fn = to_ros_snake_case(name)
+    );
 
-    CONVERSION_TEMPLATE.replace("{comments}", comments)
+    CONVERSION_TEMPLATE
+        .replace("{comments}", comments)
         .replace("{c_includes}", &c_includes)
         .replace("{ros1_includes}", &ros1_includes)
         .replace("{ros2_includes}", &ros2_includes)
@@ -83,14 +94,20 @@ pub fn conversion_template(
         .replace("{to_c_members}", &to_c_members)
 }
 
-pub fn typealias_template(options: &ConversionOptions, comments: &str, name: &str, alias: &str) -> String {
+pub fn typealias_template(
+    options: &ConversionOptions,
+    comments: &str,
+    name: &str,
+    alias: &str,
+) -> String {
     conversion_template(
         comments,
         &options.main_pdu,
         &vec![NameType {
-            name: name.to_string(), 
-            ty: alias.to_string(), 
-            is_primitive: false 
+            name: name.to_string(),
+            ty: alias.to_string(),
+            is_primitive: false,
+            inner_types: None,
         }],
         name,
         "TYPEALIAS",
@@ -112,18 +129,15 @@ pub fn lazy_static_value_template(
     todo!()
 }
 
-pub fn integer_template(
-    options: &ConversionOptions,
-    comments: &str,
-    name: &str,
-) -> String {
+pub fn integer_template(options: &ConversionOptions, comments: &str, name: &str) -> String {
     conversion_template(
         comments,
         &options.main_pdu,
         &vec![NameType {
-            name: name.to_string(), 
-            ty: "INTEGER".to_string(), 
-            is_primitive: true 
+            name: name.to_string(),
+            ty: "INTEGER".to_string(),
+            is_primitive: true,
+            inner_types: None,
         }],
         name,
         "INTEGER",
@@ -145,9 +159,10 @@ pub fn bit_string_template(options: &ConversionOptions, comments: &str, name: &s
         comments,
         &options.main_pdu,
         &vec![NameType {
-            name: name.to_string(), 
-            ty: "BIT_STRING".to_string(), 
-            is_primitive: true 
+            name: name.to_string(),
+            ty: "BIT_STRING".to_string(),
+            is_primitive: true,
+            inner_types: None,
         }],
         name,
         "BIT-STRING",
@@ -163,9 +178,10 @@ pub fn octet_string_template(options: &ConversionOptions, comments: &str, name: 
         comments,
         &options.main_pdu,
         &vec![NameType {
-            name: name.to_string(), 
-            ty: "OCTET_STRING".to_string(), 
-            is_primitive: true 
+            name: name.to_string(),
+            ty: "OCTET_STRING".to_string(),
+            is_primitive: true,
+            inner_types: None,
         }],
         name,
         "OCTET-STRING",
@@ -184,9 +200,10 @@ pub fn char_string_template(
         comments,
         &options.main_pdu,
         &vec![NameType {
-            name: name.to_string(), 
-            ty: string_type.to_string(), 
-            is_primitive: true 
+            name: name.to_string(),
+            ty: string_type.to_string(),
+            is_primitive: true,
+            inner_types: None,
         }],
         name,
         string_type,
@@ -200,9 +217,10 @@ pub fn boolean_template(options: &ConversionOptions, comments: &str, name: &str)
         comments,
         &options.main_pdu,
         &vec![NameType {
-            name: name.to_string(), 
-            ty: "BOOLEAN".to_string(), 
-            is_primitive: true 
+            name: name.to_string(),
+            ty: "BOOLEAN".to_string(),
+            is_primitive: true,
+            inner_types: None,
         }],
         name,
         "BOOLEAN",
@@ -241,11 +259,7 @@ pub fn oid_template(_comments: &str, _name: &str) -> String {
     todo!();
 }
 
-pub fn enumerated_template(
-    options: &ConversionOptions,
-    comments: &str,
-    name: &str,
-) -> String {
+pub fn enumerated_template(options: &ConversionOptions, comments: &str, name: &str) -> String {
     conversion_template(
         comments,
         &options.main_pdu,
@@ -273,34 +287,99 @@ pub fn sequence_or_set_template(
     name: &str,
     members: Vec<NamedSeqMember>,
 ) -> String {
+    let links: HashMap<String, &NamedSeqMember> = members
+        .iter()
+        .filter_map(|m| {
+            if let Some(inner) = &m.name_type.inner_types {
+                match inner {
+                    InnerTypes::Choice(c) => Some((
+                        c.linked_with.clone(),
+                        members
+                            .iter()
+                            .find(|m| m.name_type.name == c.linked_with)
+                            .unwrap(),
+                    )),
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // C -> ROS
+    let to_ros_inner_members = |member: &NamedSeqMember| -> String {
+        if let Some(inner) = &member.name_type.inner_types {
+            let cases = match inner {
+                InnerTypes::Choice(c) => {
+                    c.options.iter().map(|im| {
+                        format!("  case {name}__{c_field_name}_PR_{ty}:\n    \
+                                 toRos_{ty}(in.{c_field_name}.choice.{c_member}, out.{r_field_name}.{r_member});\n    \
+                                 out.{r_field_name}.choice.value = {pdu}_msgs::{linked_with}::{r_const_member};\n    \
+                                 break;", 
+                            pdu = &options.main_pdu,
+                            linked_with = links.get(&c.linked_with).unwrap().name_type.ty,
+                            c_field_name = member.name_type.name,
+                            r_field_name = &to_ros_snake_case(&member.name_type.name),
+                            ty = im.ty,
+                            c_member = to_ros_title_case(&im.name),
+                            r_member = to_ros_snake_case(&im.name),
+                            r_const_member = to_ros_const_case(&im.name))
+                    }).collect::<Vec<String>>().join("\n")
+                },
+            };
+            format!(
+                "switch (in.{field_name}.present) {{\n\
+                    {cases}\n  \
+                    }}",
+                field_name = member.name_type.name,
+                cases = cases
+            )
+        } else {
+            "".to_string()
+        }
+    };
+
     let to_ros_conversion_call = |member: &NamedSeqMember| -> String {
         if !member.name_type.is_primitive {
-            format!("toRos_{ty}({deref}in.{c_member}, out.{r_member});", 
-                ty = member.name_type.ty, 
-                deref = if member.is_optional { "*" } else { "" },
-                c_member = member.name_type.name, 
-                r_member = to_ros_snake_case(&member.name_type.name))
+            if member.name_type.inner_types.is_some() {
+                // TODO optional type with inner_types
+                to_ros_inner_members(&member)
+            } else {
+                format!(
+                    "toRos_{ty}({deref}in.{c_member}, out.{r_member});",
+                    ty = member.name_type.ty,
+                    deref = if member.is_optional { "*" } else { "" },
+                    c_member = member.name_type.name,
+                    r_member = to_ros_snake_case(&member.name_type.name)
+                )
+            }
         } else {
-            format!("etsi_its_primitives_conversion::toRos_{ty}({deref}in.{c_member}, out.{r_member});", 
-                ty = member.name_type.ty, 
+            format!(
+                "etsi_its_primitives_conversion::toRos_{ty}({deref}in.{c_member}, out.{r_member});",
+                ty = member.name_type.ty,
                 deref = if member.is_optional { "*" } else { "" },
-                c_member = member.name_type.name, 
+                c_member = member.name_type.name,
                 r_member = to_ros_snake_case(&member.name_type.name)
             )
         }
     };
     let to_ros_fmt_member = |member: &NamedSeqMember| -> String {
         if member.is_optional {
-            format!("if (in.{c_member}) {{\n    \
+            format!(
+                "if (in.{c_member}) {{\n    \
                      {conversion}\n  \
                      {present}\
-                     }}", 
+                     }}",
                 c_member = member.name_type.name,
                 conversion = to_ros_conversion_call(&member),
-                present = if !member.has_default { 
-                    format!("  out.{r_member}_is_present = true;\n  ",
-                        r_member = to_ros_snake_case(&member.name_type.name)) 
-                } else { "".to_string() }
+                present = if !member.has_default {
+                    format!(
+                        "  out.{r_member}_is_present = true;\n  ",
+                        r_member = to_ros_snake_case(&member.name_type.name)
+                    )
+                } else {
+                    "".to_string()
+                }
             )
         } else {
             to_ros_conversion_call(&member)
@@ -312,18 +391,58 @@ pub fn sequence_or_set_template(
         .collect::<Vec<String>>()
         .join("\n  ");
 
+    // ROS -> C
+    let to_c_inner_members = |member: &NamedSeqMember| -> String {
+        if let Some(inner) = &member.name_type.inner_types {
+            let cases = match inner {
+                InnerTypes::Choice(c) => {
+                    c.options.iter().map(|im| {
+                        format!("  case {pdu}_msgs::{linked_with}::{r_const_member}:\n    \
+                                 toStruct_{ty}(in.{r_field_name}.{r_member}, out.{c_field_name}.choice.{c_member});\n    \
+                                 out.{c_field_name}.present = {name}__{c_field_name}_PR::{name}__{c_field_name}_PR_{c_member};\n    \
+                                 break;", 
+                            pdu = &options.main_pdu,
+                            linked_with = links.get(&c.linked_with).unwrap().name_type.ty,
+                            c_field_name = member.name_type.name,
+                            r_field_name = &to_ros_snake_case(&member.name_type.name),
+                            ty = im.ty,
+                            c_member = to_ros_title_case(&im.name),
+                            r_member = to_ros_snake_case(&im.name),
+                            r_const_member = to_ros_const_case(&im.name))
+                    }).collect::<Vec<String>>().join("\n")
+                },
+            };
+            format!(
+                "switch (in.{field_name}.choice.value) {{\n\
+                    {cases}\n  \
+                    }}",
+                field_name = to_ros_snake_case(&member.name_type.name),
+                cases = cases
+            )
+        } else {
+            "".to_string()
+        }
+    };
+
     let to_c_conversion_call = |member: &NamedSeqMember| -> String {
         if !member.name_type.is_primitive {
-            format!("toStruct_{ty}(in.{r_member}, {deref}out.{c_member});", 
-                ty = member.name_type.ty, 
-                deref = if member.is_optional { "*" } else { "" },
-                c_member = member.name_type.name, 
-                r_member = to_ros_snake_case(&member.name_type.name))
+            if member.name_type.inner_types.is_some() {
+                // TODO optional type with inner_types
+                to_c_inner_members(&member)
+            } else {
+                format!(
+                    "toStruct_{ty}(in.{r_member}, {deref}out.{c_member});",
+                    ty = member.name_type.ty,
+                    deref = if member.is_optional { "*" } else { "" },
+                    c_member = member.name_type.name,
+                    r_member = to_ros_snake_case(&member.name_type.name)
+                )
+            }
         } else {
             format!("etsi_its_primitives_conversion::toStruct_{ty}(in.{r_member}, {deref}out.{c_member});", 
-                ty = member.name_type.ty, 
+                ty = member.name_type.ty,
                 deref = if member.is_optional { "*" } else { "" },
-                c_member = member.name_type.name, 
+                c_member = member.name_type.name,
                 r_member = to_ros_snake_case(&member.name_type.name)
             )
         }
@@ -331,20 +450,24 @@ pub fn sequence_or_set_template(
     let to_c_fmt_member = |member: &NamedSeqMember| -> String {
         if member.is_optional {
             if !member.has_default {
-                format!("if (in.{r_member}_is_present) {{\n    \
+                format!(
+                    "if (in.{r_member}_is_present) {{\n    \
                          out.{c_member} = ({ty}_t*) calloc(1, sizeof({ty}_t));\n    \
                          {conversion}\n  \
                          }}",
                     ty = member.name_type.ty,
                     c_member = member.name_type.name,
                     conversion = to_c_conversion_call(&member),
-                    r_member = to_ros_snake_case(&member.name_type.name))
+                    r_member = to_ros_snake_case(&member.name_type.name)
+                )
             } else {
-                format!("out.{c_member} = ({ty}_t*) calloc(1, sizeof({ty}_t));\n  \
-                         {conversion}",
+                format!(
+                    "out.{c_member} = ({ty}_t*) calloc(1, sizeof({ty}_t));\n  \
+                     {conversion}",
                     ty = member.name_type.ty,
                     c_member = member.name_type.name,
-                    conversion = to_c_conversion_call(&member))
+                    conversion = to_c_conversion_call(&member)
+                )
             }
         } else {
             to_c_conversion_call(&member)
@@ -356,10 +479,23 @@ pub fn sequence_or_set_template(
         .collect::<Vec<String>>()
         .join("\n  ");
 
+    let includes = &members
+        .iter()
+        .flat_map(|m| {
+            if let Some(inners) = &m.name_type.inner_types {
+                match inners {
+                    InnerTypes::Choice(c) => c.options.clone(),
+                }
+            } else {
+                vec![m.name_type.clone()]
+            }
+        })
+        .collect();
+
     conversion_template(
         comments,
         &options.main_pdu,
-        &members.iter().map(|m| m.name_type.clone()).collect(),
+        &includes,
         name,
         "SEQUENCE",
         &to_ros_members,
@@ -375,16 +511,17 @@ pub fn sequence_or_set_of_template(
     _anonymous_item: &str,
     member_type: &str,
 ) -> String {
-    let to_ros_loop = 
-        format!("for (int i = 0; i < in.list.count; ++i) {{\n    \
-                 {pdu}_msgs::{ty} el;\n    \
-                 toRos_{ty}(*(in.list.array[i]), el);\n    \
-                 out.array.push_back(el);\n  \
-                 }}", 
-                 pdu = &options.main_pdu,
-                ty = member_type);
+    let to_ros_loop = format!(
+        "for (int i = 0; i < in.list.count; ++i) {{\n    \
+         {pdu}_msgs::{ty} el;\n    \
+         toRos_{ty}(*(in.list.array[i]), el);\n    \
+         out.array.push_back(el);\n  \
+         }}",
+        pdu = &options.main_pdu,
+        ty = member_type
+    );
 
-    let to_c_loop = 
+    let to_c_loop =
         format!("for (int i = 0; i < in.array.size(); ++i) {{\n    \
                  {ty}_t* el = ({ty}_t*) calloc(1, sizeof({ty}_t));\n    \
                  toStruct_{ty}(in.array[i], *el);\n    \
@@ -395,16 +532,20 @@ pub fn sequence_or_set_of_template(
     conversion_template(
         comments,
         &options.main_pdu,
-        &vec![NameType {
-            name: name.to_string(), 
-            ty: name.to_string(), 
-            is_primitive: false 
-        },
-        NameType {
-            name: member_type.to_string(), 
-            ty: member_type.to_string(), 
-            is_primitive: false
-        }],
+        &vec![
+            NameType {
+                name: name.to_string(),
+                ty: name.to_string(),
+                is_primitive: false,
+                inner_types: None,
+            },
+            NameType {
+                name: member_type.to_string(),
+                ty: member_type.to_string(),
+                is_primitive: false,
+                inner_types: None,
+            },
+        ],
         name,
         "SEQUENCE-OF",
         &to_ros_loop,
@@ -438,54 +579,58 @@ pub fn choice_template(
     name: &str,
     members: &Vec<NameType>,
 ) -> String {
-    let to_ros_members = 
-        format!("switch (in.present) {{\n") +
-        &members
-        .iter()
-        .map(|member| 
-            if !member.is_primitive {
-            format!("  case {parent}_PR_{c_member}:\n    \
-                toRos_{ty}(in.choice.{c_member}, out.{r_member});\n    \
-                out.choice = {pdu}_msgs::{parent}::CHOICE_{r_ch_member};",
-                parent = &name,
-                ty = member.ty, 
-                pdu = &options.main_pdu,
-                c_member = member.name, 
-                r_member = to_ros_snake_case(&member.name),
-                r_ch_member = to_ros_const_case(&member.name))
-            } else {
-            format!("etsi_its_primitives_conversion::toRos_{ty}(in, out.value);", 
-                ty = member.ty, 
-            )
-            }
-        )
-        .collect::<Vec<String>>()
-        .join("\n    break;\n")
+    let to_ros_members = format!("switch (in.present) {{\n")
+        + &members
+            .iter()
+            .map(|member| {
+                if !member.is_primitive {
+                    format!(
+                        "  case {parent}_PR_{c_member}:\n    \
+                         toRos_{ty}(in.choice.{c_member}, out.{r_member});\n    \
+                         out.choice = {pdu}_msgs::{parent}::CHOICE_{r_ch_member};",
+                        parent = &name,
+                        ty = member.ty,
+                        pdu = &options.main_pdu,
+                        c_member = member.name,
+                        r_member = to_ros_snake_case(&member.name),
+                        r_ch_member = to_ros_const_case(&member.name)
+                    )
+                } else {
+                    format!(
+                        "etsi_its_primitives_conversion::toRos_{ty}(in, out.value);",
+                        ty = member.ty,
+                    )
+                }
+            })
+            .collect::<Vec<String>>()
+            .join("\n    break;\n")
         + "\n    break;\n  default: break;\n  }";
 
-    let to_c_members = 
-        format!("switch (in.choice) {{\n") +
-        &members
-        .iter()
-        .map(|member| 
-            if !member.is_primitive {
-            format!("  case {pdu}_msgs::{parent}::CHOICE_{r_ch_member}:\n    \
-                toStruct_{ty}(in.{r_member}, out.choice.{c_member});\n    \
-                out.present = {parent}_PR::{parent}_PR_{c_member};",
-                parent = &name,
-                ty = member.ty, 
-                pdu = &options.main_pdu,
-                c_member = member.name, 
-                r_member = to_ros_snake_case(&member.name),
-                r_ch_member = to_ros_const_case(&member.name))
-            } else {
-            format!("etsi_its_primitives_conversion::toStruct_{ty}(in, out.value);", 
-                ty = member.ty, 
-            )
-            }
-        )
-        .collect::<Vec<String>>()
-        .join("\n    break;\n")
+    let to_c_members = format!("switch (in.choice) {{\n")
+        + &members
+            .iter()
+            .map(|member| {
+                if !member.is_primitive {
+                    format!(
+                        "  case {pdu}_msgs::{parent}::CHOICE_{r_ch_member}:\n    \
+                         toStruct_{ty}(in.{r_member}, out.choice.{c_member});\n    \
+                         out.present = {parent}_PR::{parent}_PR_{c_member};",
+                        parent = &name,
+                        ty = member.ty,
+                        pdu = &options.main_pdu,
+                        c_member = member.name,
+                        r_member = to_ros_snake_case(&member.name),
+                        r_ch_member = to_ros_const_case(&member.name)
+                    )
+                } else {
+                    format!(
+                        "etsi_its_primitives_conversion::toStruct_{ty}(in, out.value);",
+                        ty = member.ty,
+                    )
+                }
+            })
+            .collect::<Vec<String>>()
+            .join("\n    break;\n")
         + "\n    break;\n  default: break;\n  }";
 
     conversion_template(

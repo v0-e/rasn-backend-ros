@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use regex::Regex;
 use clap::Parser;
+use regex::Regex;
 
 use rasn_compiler::prelude::*;
 use ros_backend::conversion::Conversion;
@@ -18,15 +18,12 @@ struct Cli {
 fn main() {
     let args = Cli::parse();
 
-    let backend = Conversion::default()
-        .set_main_pdu_name(&args.pdu.clone());
+    let backend = Conversion::default().set_main_pdu_name(&args.pdu.clone());
 
     // Compile conversion headers
     let compiler_res = Compiler::new()
         .with_backend(backend)
-        .add_asn_sources_by_path(
-            args.paths.iter(),
-        )
+        .add_asn_sources_by_path(args.paths.iter())
         .compile_to_string();
     let generated = &compiler_res.unwrap().generated;
 
@@ -45,5 +42,4 @@ fn main() {
             std::fs::write(path, definition).unwrap();
         }
     });
-
 }

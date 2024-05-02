@@ -1,3 +1,4 @@
+use crate::common::{to_ros_const_case, to_ros_snake_case, to_ros_title_case, IntegerTypeExt};
 use rasn_compiler::intermediate::{
     constraints::Constraint,
     encoding_rules::per_visible::{
@@ -5,11 +6,10 @@ use rasn_compiler::intermediate::{
     },
     information_object::{InformationObjectClass, InformationObjectField},
     types::{Choice, ChoiceOption, Enumerated, SequenceOrSet, SequenceOrSetMember},
-    ASN1Type, ASN1Value, CharacterStringType, IntegerType,
-    ToplevelDefinition, ToplevelTypeDefinition,
+    ASN1Type, ASN1Value, CharacterStringType, IntegerType, ToplevelDefinition,
+    ToplevelTypeDefinition,
 };
-use rasn_compiler::prelude::{*, ir::*};
-use crate::common::{IntegerTypeExt, to_ros_const_case, to_ros_snake_case, to_ros_title_case};
+use rasn_compiler::prelude::{ir::*, *};
 
 macro_rules! error {
     ($kind:ident, $($arg:tt)*) => {
@@ -112,9 +112,7 @@ pub fn format_constraints(
                 )
             }
             (Some(min), Some(max), false) if min == max => {
-                format!(
-                    "{range_type} {range_prefix} = {min}"
-                )
+                format!("{range_type} {range_prefix} = {min}")
             }
             (Some(min), Some(max), false) => {
                 format!(
@@ -144,7 +142,9 @@ pub fn format_distinguished_values(dvalues: &Option<Vec<DistinguishedValue>>) ->
     if let Some(dvalues) = dvalues {
         dvalues.iter().for_each(|dvalue| {
             result.push_str(&format!(
-                "{{type}} {{prefix}}{} = {}\n", to_ros_const_case(&dvalue.name), dvalue.value
+                "{{type}} {{prefix}}{} = {}\n",
+                to_ros_const_case(&dvalue.name),
+                dvalue.value
             ));
         });
     }
@@ -213,9 +213,11 @@ pub fn format_sequence_or_set_members(
     parent_name: &String,
 ) -> Result<String, GeneratorError> {
     let first_extension_index = sequence_or_set.extensible;
-    sequence_or_set.members.iter().enumerate().try_fold(
-        "".to_string(),
-        |mut acc, (i, m)| {
+    sequence_or_set
+        .members
+        .iter()
+        .enumerate()
+        .try_fold("".to_string(), |mut acc, (i, m)| {
             let extension_annotation = if i >= first_extension_index.unwrap_or(usize::MAX)
                 && m.name.starts_with("ext_group_")
             {
@@ -225,14 +227,11 @@ pub fn format_sequence_or_set_members(
             } else {
                 "".into()
             };
-            format_sequence_member(m, parent_name, extension_annotation).map(
-                |declaration| {
-                    acc.push_str(&format!("{declaration}"));
-                    acc
-                },
-            )
-        },
-    )
+            format_sequence_member(m, parent_name, extension_annotation).map(|declaration| {
+                acc.push_str(&format!("{declaration}"));
+                acc
+            })
+        })
 }
 
 fn format_sequence_member(
@@ -248,8 +247,10 @@ fn format_sequence_member(
     if (member.is_optional && member.default_value.is_none())
         || member.name.starts_with("ext_group_")
     {
-        formatted_type_name = format!("bool {name}_is_present\n\
-                                      {formatted_type_name}")
+        formatted_type_name = format!(
+            "bool {name}_is_present\n\
+                                      {formatted_type_name}"
+        )
     }
     Ok(format!("{formatted_type_name} {name}\n"))
 }
@@ -338,7 +339,9 @@ fn constraints_and_type_name(
             let (_, inner_type) = constraints_and_type_name(&s.element_type, name, parent_name)?;
             (s.constraints().clone(), format!("{inner_type}[]").into())
         }
-        ASN1Type::ElsewhereDeclaredType(e) => (e.constraints.clone(), to_ros_title_case(&e.identifier)),
+        ASN1Type::ElsewhereDeclaredType(e) => {
+            (e.constraints.clone(), to_ros_title_case(&e.identifier))
+        }
         ASN1Type::InformationObjectFieldReference(_)
         | ASN1Type::EmbeddedPdv
         | ASN1Type::External => {
@@ -384,25 +387,24 @@ pub fn format_default_methods(
         if let Some(value) = member.default_value.as_ref() {
             let val = match value {
                 ASN1Value::EnumeratedValue { .. } => continue, /* TODO */
-                _ => value_to_tokens(value, Some(&type_to_tokens(&member.ty)?.to_string()))?
+                _ => value_to_tokens(value, Some(&type_to_tokens(&member.ty)?.to_string()))?,
             };
             // TODO generalize
             let ty = match value {
-                ASN1Value::LinkedNestedValue { supertypes: _, value } => {
-                    match value.as_ref() {
-                        ASN1Value::LinkedIntValue { integer_type, value: _ } => integer_type.to_str().to_string(),
-                        _ => type_to_tokens(&member.ty)?,
-                    }
+                ASN1Value::LinkedNestedValue {
+                    supertypes: _,
+                    value,
+                } => match value.as_ref() {
+                    ASN1Value::LinkedIntValue {
+                        integer_type,
+                        value: _,
+                    } => integer_type.to_str().to_string(),
+                    _ => type_to_tokens(&member.ty)?,
                 },
-                ASN1Value::EnumeratedValue { .. } => {
-                    "uint8".into()
-                }
+                ASN1Value::EnumeratedValue { .. } => "uint8".into(),
                 _ => type_to_tokens(&member.ty)?,
             };
-            let method_name = format!(
-                "{}_DEFAULT",
-                to_ros_const_case(&member.name)
-            );
+            let method_name = format!("{}_DEFAULT", to_ros_const_case(&member.name));
             output.push_str(&format!("{ty} {method_name} = {val}\n"));
         }
     }
@@ -515,9 +517,7 @@ pub fn value_to_tokens(
         ASN1Value::EnumeratedValue {
             enumerated,
             enumerable,
-        } => {
-            Ok(format!("{}_{}", enumerated, enumerable))
-        }
+        } => Ok(format!("{}_{}", enumerated, enumerable)),
         ASN1Value::LinkedElsewhereDefinedValue { identifier: e, .. }
         | ASN1Value::ElsewhereDeclaredValue { identifier: e, .. } => Ok(e.to_string()),
         ASN1Value::ObjectIdentifier(oid) => {
@@ -538,9 +538,10 @@ pub fn value_to_tokens(
                 .collect::<Result<Vec<_>, _>>()?;
             todo!()
         }
-        ASN1Value::LinkedNestedValue { supertypes: _, value } => {
-            Ok(value_to_tokens(value, type_name)?)
-        }
+        ASN1Value::LinkedNestedValue {
+            supertypes: _,
+            value,
+        } => Ok(value_to_tokens(value, type_name)?),
         ASN1Value::LinkedIntValue {
             integer_type,
             value,
@@ -778,4 +779,3 @@ impl ASN1ValueExt for ASN1Type {
         }
     }
 }
-

@@ -15,12 +15,7 @@ pub fn integer_value_template(comments: &str, name: &str, vtype: &str, value: &s
     )
 }
 
-pub fn lazy_static_value_template(
-    comments: &str,
-    name: &str,
-    vtype: &str,
-    value: &str,
-) -> String {
+pub fn lazy_static_value_template(comments: &str, name: &str, vtype: &str, value: &str) -> String {
     format!(
         "## VALUE {name}\n\
         {comments}\n\
@@ -35,7 +30,9 @@ pub fn integer_template(
     integer_type: &str,
     dvalues: &str,
 ) -> String {
-    let typed_dvalues = dvalues.replace("{type}", &integer_type).replace("{prefix}", "");
+    let typed_dvalues = dvalues
+        .replace("{type}", &integer_type)
+        .replace("{prefix}", "");
     format!(
         "## INTEGER {name}\n\
         {comments}\n\
@@ -54,7 +51,9 @@ pub fn utc_time_template(_comments: &str, _name: &str, _annotations: &str) -> St
 }
 
 pub fn bit_string_template(comments: &str, name: &str, constraints: &str, dvalues: &str) -> String {
-    let typed_dvalues = dvalues.replace("{type}", "uint8").replace("{prefix}", "BIT_INDEX_");
+    let typed_dvalues = dvalues
+        .replace("{type}", "uint8")
+        .replace("{prefix}", "BIT_INDEX_");
     format!(
         "## BIT-STRING {name}\n\
         {comments}\n\
