@@ -11,6 +11,9 @@ struct Cli {
     /// Main PDU name
     #[clap(short, long)]
     pdu: String,
+    #[clap(short, long)]
+    /// Output directory
+    out: std::path::PathBuf,
     /// ASN.1 files to compile
     paths: Vec<std::path::PathBuf>,
 }
@@ -36,7 +39,7 @@ fn main() {
             } else {
                 "unknown"
             };
-            let path = PathBuf::from(format!("out/{}.msg", name));
+            let path = args.out.join(format!("{}.msg", name));
             std::fs::write(path, definition).unwrap();
         }
     });
